@@ -1,0 +1,5 @@
+rm -f *.o
+rm -f main.elf
+rm -f main.hex
+rm -f main.bin
+make: *** No rule to make target `/src/boards/nucleof401/src/*.c', needed by `main.elf'.  Stop.

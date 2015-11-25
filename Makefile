@@ -6,15 +6,17 @@ STDPERPH_PATH=$(NP2_ROOT)/src/Libraries/stm32f4xx_periph
 COMMON_PATH=$(NP2_ROOT)/src/Libraries/common
 CMSIS_PATH=$(NP2_ROOT)/src/Libraries/cmsis
 FREERTOS_PATH=$(NP2_ROOT)/src/FreeRTOS
-CLI_PATH=$(NP2_ROOT)/src/FreeRTOSplus/FreeRTOS-Plus-CLI
+#CLI_PATH=$(NP2_ROOT)/src/FreeRTOSplus/FreeRTOS-Plus-CLI
 PERIPH_PATH=$(NP2_ROOT)/src/peripherals
 
 PROJ_NAME=main
 
-SRCS = $(PROJ_NAME).c *.c
+SRCS = $(PROJ_NAME).c
+#SRCS += ESP8622.c
+SRCS += tracks.c
 SRCS += $(NUC_PATH)/src/*.c
 SRCS += $(STDPERPH_PATH)/src/*.c $(COMMON_PATH)/*.c
-#SRCS += $(FREERTOS_PATH)/*.c $(FREERTOS_PATH)/portable/GCC/ARM_CM4F/*.c $(FREERTOS_PATH)/portable/MemMang/heap_1.c
+SRCS += $(FREERTOS_PATH)/*.c $(FREERTOS_PATH)/portable/GCC/ARM_CM4F/*.c $(FREERTOS_PATH)/portable/MemMang/heap_2.c
 #SRCS += $(CLI_PATH)/*.c
 # all the files will be generated with this name (main.elf, main.bin, main.hex, etc)
 
@@ -36,7 +38,7 @@ ROOT=$(shell pwd)
 
 CFLAGS += -I. -I..
 CFLAGS += -I$(CMSIS_PATH) -I$(NUC_PATH)/inc -I$(STDPERPH_PATH)/inc -I$(COMMON_PATH)
-#CFLAGS += -I$(FREERTOS_PATH)/include -I$(FREERTOS_PATH)/portable/GCC/ARM_CM4F
+CFLAGS += -I$(FREERTOS_PATH)/include -I$(FREERTOS_PATH)/portable/GCC/ARM_CM4F
 CFLAGS += -I$(CLI_PATH)
 CFLAGS += -I$(PERIPH_PATH)/nrf24l01plus/
 #CFLAGS += -DENABLE_VCP #Enable USB VCP for debug_printf
@@ -69,7 +71,7 @@ prog:
 	sudo dfu-util -d 0483:df11 -c 1 -i 0 -a 0 -s 0x08000000 -D $(PROJ_NAME).bin
 
 pron:
-	sudo st-flash write main.bin 0x8000000					#Program Nucleo
+	sudo st-flash write $(PROJ_NAME).bin 0x8000000					#Program Nucleo
 
 clean:
 	rm -f *.o

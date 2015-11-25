@@ -2,140 +2,136 @@
 #include "board.h"
 #include "stm32f4xx_hal_conf.h"
 #include "debug_printf.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "semphr.h"
+
 #include "tracks.h"
+#include <string.h>
+#include "wheelencoders.c"
+
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
+#define SECOND 0x7FFF00
+#define _PWM_DRIVE
+#define mainLED_PRIORITY		( tskIDLE_PRIORITY + 2 )
+#define mainLED_TASK_STACK_SIZE		( configMINIMAL_STACK_SIZE * 5 )
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
-/* Private function prototypes -----------------------------------------------*/
-void Delay(__IO unsigned long nCount);
-void Hardware_init();
-void claw_init();
-void claw_open();
-void claw_close();
+int left_goal = 0;
+int right_goal = 0;
 
-int output = 0;
-TIM_HandleTypeDef TIM_Init;
+static int P = 0.5;
+
+
+extern int count_left;
+extern int count_right;
+
+/* Private function prototypes -----------------------------------------------*/
+void Main_Task( void );
+void Tracks_Task( void );
+void Hardware_init( void );
 
 void main(void) {
-	Hardware_init();	//Initalise hardware modules
-	int value = 0;
+	BRD_init();
+	Hardware_init();
 
+	/* Start the task to flash the LED. */
+	xTaskCreate( (void *) &Main_Task, (const signed char *) "LED", mainLED_TASK_STACK_SIZE, NULL, mainLED_PRIORITY, NULL );
+        
+        xTaskCreate( (void *) &Tracks_Task, (const signed char *) "TRA", mainLED_TASK_STACK_SIZE, NULL, mainLED_PRIORITY, NULL );
+        
+	vTaskStartScheduler();
+}
 
-	/* Main processing loop */
-    while (1) {
-        BRD_LEDToggle();	//Toggle 'Alive' LED on/off
+void Main_Task(){
+    
+    left_goal = 500;
+    
+    right_goal = 500;
+    
+    for(;;){
+        BRD_LEDToggle();
 
-				set_left_track(0);
-				set_right_track(0);
+        vTaskDelay(1000);
+    }
+}
 
-				Delay(0x7FFF00*3);
-
-				set_left_track(0);
-				set_right_track(1);
-
-				Delay(0x7FFF00*3);
-
-				set_left_track(1);
-				set_right_track(1);
-
-				Delay(0x7FFF00*3);
-  	}
+void Tracks_Task(){
+	for(;;){
+            
+            // P Controller
+            set_left_speed((left_goal - count_left)*P); 
+            set_right_speed((right_goal - count_right)*P);
+            
+            vTaskDelay(10);
+	}
 }
 
 void Hardware_init() {
-	BRD_init();			//Initalise NP2 board.
 
-	BRD_LEDInit();		//Initialise Blue LED
-	BRD_LEDOff();		//Turn off Blue LED
+	portDISABLE_INTERRUPTS();	//Disable interrupts
 
-	/* Enable the D0 & D1 Clock */
-	__BRD_D5_GPIO_CLK();
-	__BRD_D4_GPIO_CLK();
+	BRD_LEDInit();
+	BRD_LEDOn();
+        
+        tracks_init();
+        
+        wheelencoders_init();
 
-	tracks_init();
-	//claw_init();
+	portENABLE_INTERRUPTS();	//Disable interrupts
 }
 
-void Delay(__IO unsigned long nCount) {
-  	while(nCount--) {
-  	}
+/**
+  * @brief  Application Tick Task.
+  * @param  None
+  * @retval None
+  */
+void vApplicationTickHook( void ) {
+	BRD_LEDOff();
 }
 
-void claw_open(){
-    TIM_OC_InitTypeDef PWMConfig;
-    /* PWM Mode configuration for Channel 2 - set pulse width*/
-    PWMConfig.OCMode       = TIM_OCMODE_PWM1;	//Set PWM MODE (1 or 2 - NOT CHANNEL)
-    PWMConfig.Pulse        = 500;		//1ms pulse width to 10ms
-    PWMConfig.OCPolarity   = TIM_OCPOLARITY_HIGH;
-    PWMConfig.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
-    PWMConfig.OCFastMode   = TIM_OCFAST_DISABLE;
-    PWMConfig.OCIdleState  = TIM_OCIDLESTATE_RESET;
-    PWMConfig.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+/**
+  * @brief  Idle Application Task
+  * @param  None
+  * @retval None
+  */
+void vApplicationIdleHook( void ) {
+	static portTickType xLastTx = 0;
 
-    HAL_TIM_PWM_ConfigChannel(&TIM_Init, &PWMConfig, TIM_CHANNEL_2);
+	BRD_LEDOff();
 
-    /* Start PWM */
-    HAL_TIM_PWM_Start(&TIM_Init, TIM_CHANNEL_2);
+	for (;;) {
+
+		/* The idle hook simply prints the idle tick count, every second */
+		if ((xTaskGetTickCount() - xLastTx ) > (1000 / portTICK_RATE_MS)) {
+
+			xLastTx = xTaskGetTickCount();
+
+			//debug_printf("IDLE Tick %d\n", xLastTx);
+
+			/* Blink Alive LED */
+//			BRD_LEDToggle();
+		}
+	}
+}
+/**
+  * @brief  vApplicationStackOverflowHook
+  * @param  Task Handler and Task Name
+  * @retval None
+  */
+void vApplicationStackOverflowHook( xTaskHandle pxTask, signed char *pcTaskName ) {
+	/* This function will get called if a task overflows its stack.   If the
+	parameters are corrupt then inspect pxCurrentTCB to find which was the
+	offending task. */
+
+	BRD_LEDOff();
+	( void ) pxTask;
+	( void ) pcTaskName;
+
+	for( ;; );
 }
 
-void claw_close(){
-    TIM_OC_InitTypeDef PWMConfig;
-    /* PWM Mode configuration for Channel 2 - set pulse width*/
-    PWMConfig.OCMode       = TIM_OCMODE_PWM1;	//Set PWM MODE (1 or 2 - NOT CHANNEL)
-    PWMConfig.Pulse        = 1600;		//1ms pulse width to 10ms
-    PWMConfig.OCPolarity   = TIM_OCPOLARITY_HIGH;
-    PWMConfig.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
-    PWMConfig.OCFastMode   = TIM_OCFAST_DISABLE;
-    PWMConfig.OCIdleState  = TIM_OCIDLESTATE_RESET;
-    PWMConfig.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-
-    HAL_TIM_PWM_ConfigChannel(&TIM_Init, &PWMConfig, TIM_CHANNEL_2);
-
-    /* Start PWM */
-    HAL_TIM_PWM_Start(&TIM_Init, TIM_CHANNEL_2);
-}
-
-void claw_init(){
-    uint16_t PrescalerValue = 0;
-    GPIO_InitTypeDef GPIO_InitStructure;
-    TIM_OC_InitTypeDef PWMConfig;
-
-    __TIM2_CLK_ENABLE();
-    __BRD_D3_GPIO_CLK();
-
-    GPIO_InitStructure.Pin = BRD_D3_PIN;				//Pin
-    GPIO_InitStructure.Mode = GPIO_MODE_AF_PP; 		//Set mode to be output alternate
-    GPIO_InitStructure.Pull = GPIO_NOPULL;			//Enable Pull up, down or no pull resister
-    GPIO_InitStructure.Speed = GPIO_SPEED_MEDIUM;			//Pin latency
-    GPIO_InitStructure.Alternate = GPIO_AF1_TIM2;	//Set alternate function to be timer 3
-    HAL_GPIO_Init(BRD_D3_GPIO_PORT, &GPIO_InitStructure);	//Initialise Pin
-
-    /* Compute the prescaler value. SystemCoreClock = 168000000 - set for 500Khz clock */
-    PrescalerValue = (uint16_t) ((SystemCoreClock /2) / 500000) - 1;
-
-    /* Configure Timer settings */
-    TIM_Init.Instance = TIM2;					//Enable Timer 3
-    TIM_Init.Init.Period = 20000;			//Set for 200ms (5Hz) period
-    TIM_Init.Init.Prescaler = PrescalerValue;	//Set presale value
-    TIM_Init.Init.ClockDivision = 0;			//Set clock division
-    TIM_Init.Init.RepetitionCounter = 0; 		// Set Reload Value
-    TIM_Init.Init.CounterMode = TIM_COUNTERMODE_UP;	//Set timer to count up.
-
-    /* PWM Mode configuration for Channel 2 - set pulse width*/
-    PWMConfig.OCMode       = TIM_OCMODE_PWM1;	//Set PWM MODE (1 or 2 - NOT CHANNEL)
-    PWMConfig.Pulse        = 100;		//1ms pulse width to 10ms
-    PWMConfig.OCPolarity   = TIM_OCPOLARITY_HIGH;
-    PWMConfig.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
-    PWMConfig.OCFastMode   = TIM_OCFAST_DISABLE;
-    PWMConfig.OCIdleState  = TIM_OCIDLESTATE_RESET;
-    PWMConfig.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-
-    /* Enable PWM for Timer 2, channel 2 */
-    HAL_TIM_PWM_Init(&TIM_Init);
-    HAL_TIM_PWM_ConfigChannel(&TIM_Init, &PWMConfig, TIM_CHANNEL_2);
-
-    /* Start PWM */
-    HAL_TIM_PWM_Start(&TIM_Init, TIM_CHANNEL_2);
-}
